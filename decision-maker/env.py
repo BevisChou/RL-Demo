@@ -1,8 +1,18 @@
+from enum import IntEnum
+import json
+import random
+
 import gym
 import numpy as np
 import zmq
 
-import msg_pb2
+class RequestType(IntEnum):
+    RESET = 0
+    STEP = 1
+    CLOSE = 2
+
+class Config(object):
+    pass
 
 class CustomEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
@@ -15,14 +25,17 @@ class CustomEnv(gym.Env):
 
         self.eps = 1e-3
 
-        self.config = msg_pb2.Request.Config()
+        self.config = Config()
         self.config.g = 9.8
         self.config.k = 1
         self.config.m = 1
         self.config.l = 1
-        self.config.w = 0.1
+        if bool(random.getrandbits(1)):
+            self.config.w = random.uniform(0.2, 0.3)
+        else:
+            self.config.w = random.uniform(-0.5, -0.4)
 
-        self.max_steps = 1000
+        self.max_steps = 5000
 
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PAIR)
@@ -31,16 +44,16 @@ class CustomEnv(gym.Env):
     def step(self, action):
         self.step_count += 1
 
-        request = msg_pb2.Request()
-        request.type = msg_pb2.Request.RequestType.STEP
-        request.action = action[0]
-        self.socket.send(request.SerializeToString())
+        request = {
+            "type": RequestType.STEP,
+            "action": { "f": float(action[0]) }
+        }
+        self.socket.send_string(json.dumps(request))
 
         message = self.socket.recv()
-        response = msg_pb2.Response()
-        response.ParseFromString(message)
+        response = json.loads(message)
 
-        observation = np.array([response.state.angle, response.state.angular_velocity], dtype=np.float32)
+        observation = np.array([response["state"]["angle"], response["state"]["angular_velocity"]], dtype=np.float32)
         if abs(observation[0]) < self.eps:
             self.continuous_stability += 1
         else:
@@ -57,10 +70,10 @@ class CustomEnv(gym.Env):
         }
 
         if abs(observation[0]) > np.pi / 4:
-            reward = -1e3
+            reward = -1e6
             done = True
-        elif self.continuous_stability > 20:
-            reward = 1e3
+        elif self.continuous_stability > 25:
+            reward = 1e6
             done = True
         elif self.step_count > self.max_steps:
             done = True
@@ -68,25 +81,32 @@ class CustomEnv(gym.Env):
         return observation, reward, done, info
 
     def reset(self):
-        request = msg_pb2.Request()
-        request.type = msg_pb2.Request.RequestType.RESET
-        request.config.CopyFrom(self.config)
-        self.socket.send(request.SerializeToString())
+        request = {
+            "type": RequestType.RESET,
+            "config": {
+                "g": self.config.g,
+                "k": self.config.k,
+                "m": self.config.m,
+                "l": self.config.l,
+                "w": self.config.w
+            }
+        }
+        self.socket.send_string(json.dumps(request))
 
         message = self.socket.recv()
-        response = msg_pb2.Response()
-        response.ParseFromString(message)
+        response = json.loads(message)
 
         self.continuous_stability = 0
         self.step_count = 0
 
-        observation = np.array([response.state.angle, response.state.angular_velocity], dtype=np.float32)
+        observation = np.array([response["state"]["angle"], response["state"]["angular_velocity"]], dtype=np.float32)
         return observation
 
     def render(self, mode="human"):
         pass
 
     def close (self):
-        request = msg_pb2.Request()
-        request.type = msg_pb2.Request.RequestType.CLOSE
-        self.socket.send(request.SerializeToString())
+        request = {
+            "type": RequestType.CLOSE
+        }
+        self.socket.send_string(json.dumps(request))
