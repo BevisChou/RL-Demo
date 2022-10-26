@@ -38,7 +38,10 @@ class CustomEnv(gym.Env):
 
         observation = np.array([response.state.angle, response.state.angular_velocity], dtype=np.float32)
         
-        reward = (np.cos(observation[0]) - 1) * self.config.l * self.config.m * self.config.g - np.power(self.config.l * observation[1], 2) * self.config.m / 2
+        energy = self.calc_energy(observation)
+        # reward = self.energy - energy
+        reward = (self.energy - energy) / abs(observation[0])
+        self.energy = energy
 
         done = False
         info = {
@@ -49,10 +52,8 @@ class CustomEnv(gym.Env):
         }
 
         if abs(observation[0]) > np.pi / 4:
-            reward = -1e5
             done = True
         elif (abs(observation) < self.eps).all():
-            reward = 1e5
             done = True
 
         return observation, reward, done, info
@@ -68,6 +69,7 @@ class CustomEnv(gym.Env):
         response.ParseFromString(message)
 
         observation = np.array([response.state.angle, response.state.angular_velocity], dtype=np.float32)
+        self.energy = self.calc_energy(observation)
         return observation
 
     def render(self, mode="human"):
@@ -77,3 +79,6 @@ class CustomEnv(gym.Env):
         request = msg_pb2.Request()
         request.type = msg_pb2.Request.RequestType.CLOSE
         self.socket.send(request.SerializeToString())
+
+    def calc_energy (self, observation):
+        return (1 - np.cos(observation[0])) * self.config.l * self.config.m * self.config.g + 0.5 * self.config.m * np.power(self.config.l * observation[1], 2)
