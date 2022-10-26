@@ -1,0 +1,27 @@
+syntax = "proto2";
+
+message Request {
+    enum RequestType {
+        RESET = 0;
+        STEP = 1;
+        CLOSE = 2;
+    }
+    message Config {
+        required double g = 1;
+        required double k = 2;
+        required double l = 3;
+        required double m = 4;
+        required double w = 5;
+    }
+    required RequestType type = 1;
+    optional double action = 2;
+    optional Config config = 3;
+}
+
+message Response {
+    message State {
+        required double angle = 1;
+        required double angular_velocity = 2;
+    }
+    required State state = 1;
+}
