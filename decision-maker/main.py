@@ -7,8 +7,8 @@ env = CustomEnv()
 check_env(env)
 
 print("TRAIN")
-model = SAC("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=1000)
+model = SAC("MlpPolicy", env, verbose=1, tensorboard_log="./tensorboard_log/")
+model.learn(total_timesteps=200_000, tb_log_name="sac")
 
 print("ACT")
 obs = env.reset()
