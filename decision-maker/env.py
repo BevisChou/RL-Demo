@@ -54,14 +54,8 @@ class CustomEnv(gym.Env):
         response = json.loads(message)
 
         observation = np.array([response["state"]["angle"], response["state"]["angular_velocity"]], dtype=np.float32)
-        if abs(observation[0]) < self.eps:
-            self.continuous_stability += 1
-        else:
-            self.continuous_stability = 0
-
-        reward = 100 * (np.cos(observation[0]) - 1) * self.config.l * self.config.m * self.config.g - np.power(self.config.l * observation[1], 2) * self.config.m / 2
-
-        done = False
+        reward = self.calc_reward(observation)
+        done = self.is_done(observation)
         info = {
             "r": reward,
             "f": action[0],
@@ -69,20 +63,13 @@ class CustomEnv(gym.Env):
             "av": observation[1]
         }
 
-        if abs(observation[0]) > np.pi / 4:
-            reward = -1e6
-            done = True
-        elif self.continuous_stability > 25:
-            reward = 1e6
-            done = True
-        elif self.step_count > self.max_steps:
-            done = True
-
         return observation, reward, done, info
 
-    def reset(self):
+    def reset(self, is_test=False):
+        self.is_test = is_test
         request = {
             "type": RequestType.RESET,
+            "mode": self.is_test,
             "config": {
                 "g": self.config.g,
                 "k": self.config.k,
@@ -110,3 +97,34 @@ class CustomEnv(gym.Env):
             "type": RequestType.CLOSE
         }
         self.socket.send_string(json.dumps(request))
+
+    def calc_reward(self, observation):
+        if abs(observation[0]) > np.pi / 4:
+            reward = -1e6
+        elif self.continuous_stability > 25:
+            reward = 1e6
+        else:
+            reward = 100 * (np.cos(observation[0]) - 1) * self.config.l * self.config.m * self.config.g - np.power(self.config.l * observation[1], 2) * self.config.m / 2
+        return reward
+
+    def stable_criteria(self, observation):
+        return abs(observation[0]) < self.eps
+
+    def done_criteria(self, observation):
+        if self.stable_criteria(observation):
+            self.continuous_stability += 1
+        else:
+            self.continuous_stability = 0
+        
+        if abs(observation[0]) > np.pi / 4:
+            return True
+        elif self.continuous_stability > 25:
+            return True
+        else:
+            return False
+    
+    def is_done(self, observation):
+        if not self.is_test and self.step_count > self.max_steps:
+            return True
+        else:
+            return self.done_criteria(observation)
